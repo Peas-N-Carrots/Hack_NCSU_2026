@@ -1,0 +1,4 @@
+SMTP_HOST = ""
+SMTP_PORT = 0
+SMTP_USER = ""
+SMTP_PASS = ""
