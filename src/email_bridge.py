@@ -53,7 +53,7 @@ def send_campaign_to_users(campaign_id, user_ids, from_addr="teamjam0214@gmail.c
         return {
             'success': 0,
             'failed': len(user_ids),
-            'errors': ['Email modules not configured. Please set up secrets.py with SMTP and Gemini credentials.']
+            'errors': ['Email modules not configured. Please set up config.py with SMTP and Gemini credentials.']
         }
     
     # Get campaign details
@@ -82,26 +82,61 @@ def send_campaign_to_users(campaign_id, user_ids, from_addr="teamjam0214@gmail.c
             
             to_addr = user['email']
             
+            # Log the campaign send in database FIRST to get the result_id
+            result_id = log_campaign_sent(campaign_id, user_id)
+            
+            # Create tracking link that will mark as clicked when user visits
+            # Using a simple localhost link for demo - in production you'd use your actual domain
+            tracking_link = f"http://localhost:8502?clicked={result_id}"
+            
             # Get user's sample emails for context (optional - can be used for personalization)
             samples = get_sample_emails_for_user(user_id)
             
-            # Generate the email using Gemini
-            # Use the campaign name as the "topic" for generation
-            # The template could be used for additional context, but since your generator
-            # creates the whole email, we'll use the campaign name as the topic
+            # Build a better prompt for Gemini that includes sample context and tracking link
+            sample_context = ""
+            if samples:
+                sample_context = "\n\nSample emails from this user for tone/style reference:\n"
+                for sample in samples[:2]:  # Use first 2 samples
+                    sample_context += f"Subject: {sample['subject']}\n{sample['body'][:200]}\n\n"
+            
+            # Enhanced prompt for Gemini
+            enhanced_prompt = f"""Generate a realistic phishing email based on this scenario:
+{campaign['template_format']}
+
+Target email: {to_addr}
+{sample_context}
+
+Requirements:
+1. Replace ALL placeholders like {{name}}, {{bank}}, {{company}} with realistic values
+2. Extract a name from the email address (e.g., john.smith@example.com -> John Smith)
+3. Use realistic company/bank names (e.g., Chase Bank, Wells Fargo, Amazon, Microsoft)
+4. Include this exact tracking link in the email body: {tracking_link}
+5. Make the link look legitimate (e.g., "Click here to verify your account: {tracking_link}")
+6. Keep it 2-3 paragraphs, professional tone
+7. Include urgency or authority tactics
+
+Output format:
+DISPLAY_NAME: <sender name>
+SUBJECT: <subject line>
+BODY:
+<email body with tracking link included>
+"""
+            
+            # Generate the email using Gemini with enhanced prompt
             message = generator.generate_email(
-                topic=campaign['template_format'],  # Use the template as the topic/scenario
-                role="user",  # Could be customized based on user data
+                topic=enhanced_prompt,
+                role="user",
                 difficulty="medium",
                 from_addr=from_addr,
                 to_addr=to_addr
             )
             
+            # Make sure the tracking link is in the body
+            if tracking_link not in message.body:
+                message.body = message.body + f"\n\nClick here to verify: {tracking_link}"
+            
             # Send the email
             sender.send(message)
-            
-            # Log the campaign send in database
-            log_campaign_sent(campaign_id, user_id)
             
             results['success'] += 1
             
