@@ -1,4 +1,7 @@
 secrets.py
+config.py
+src/secrets.py
+src/config.py
 test.py
 res/
 src/__pycache__/

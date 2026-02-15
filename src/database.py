@@ -7,10 +7,13 @@ import sqlite3
 from datetime import datetime
 from typing import List, Dict, Optional
 import json
+import os
 
 
-# Database file path - this creates a file in the current directory
-DB_PATH = "res/phishing_trainer.db"
+# Database file path - store in res directory (one level up from src/)
+DB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'res')
+os.makedirs(DB_DIR, exist_ok=True)  # Create res directory if it doesn't exist
+DB_PATH = os.path.join(DB_DIR, "phishing_trainer.db")
 
 
 def get_connection():

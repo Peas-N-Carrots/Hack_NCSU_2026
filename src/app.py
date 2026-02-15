@@ -12,6 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Since app.py is in src/, we can import directly without src. prefix
 from database import (
     init_database,
     add_user,
@@ -30,11 +31,25 @@ import email
 from email import policy
 from email.parser import BytesParser
 
+# Import email sending functionality
+try:
+    from email_bridge import send_campaign_to_users, test_email_config, EMAIL_MODULES_AVAILABLE
+    EMAIL_CONFIGURED = EMAIL_MODULES_AVAILABLE
+except ImportError:
+    EMAIL_CONFIGURED = False
+    print("Warning: email_bridge.py not found. Email sending will be disabled.")
+
 # Initialize database on startup
 init_database()
 
 st.title("🎣 Phishing Campaign Manager")
 st.markdown("*Educational security awareness training platform*")
+
+# Email configuration status
+if EMAIL_CONFIGURED:
+    st.success("✅ Email sending enabled")
+else:
+    st.warning("⚠️ Email sending disabled - configure secrets.py to enable")
 
 # Display overall stats at the top
 st.markdown("---")
@@ -284,6 +299,11 @@ with right_col:
                 # Send Emails section
                 st.write("**📤 Send Campaign**")
                 
+                # Check email configuration status
+                if not EMAIL_CONFIGURED:
+                    st.warning("⚠️ Email sending not configured. Set up secrets.py with SMTP credentials and Gemini API key.")
+                    st.caption("See secrets_example.py for the required format")
+                
                 # Get all users for selection
                 all_users = get_all_users()
                 if all_users:
@@ -298,23 +318,50 @@ with right_col:
                     
                     send_col1, send_col2 = st.columns([1, 1])
                     with send_col1:
-                        if st.button("📧 Send Emails", key=f"send_{campaign['id']}", type="primary"):
+                        if st.button("📧 Send Emails", key=f"send_{campaign['id']}", type="primary", disabled=not EMAIL_CONFIGURED):
                             if selected_users:
-                                st.info(f"🚀 Sending campaign to {len(selected_users)} user(s)...")
-                                st.write("**Selected recipients:**")
-                                for user_email in selected_users:
-                                    st.write(f"  - {user_email}")
-                                st.success("✅ Campaign queued! Your email sending module will handle delivery.")
-                                st.caption("(Connect your Gmail API / email sender here)")
+                                # Get user IDs
+                                user_ids = [user_options[email] for email in selected_users]
+                                
+                                # Show sending status
+                                with st.spinner(f"Generating and sending {len(user_ids)} email(s)..."):
+                                    results = send_campaign_to_users(campaign['id'], user_ids)
+                                
+                                # Display results
+                                if results['success'] > 0:
+                                    st.success(f"✅ Successfully sent to {results['success']} user(s)")
+                                
+                                if results['failed'] > 0:
+                                    st.error(f"❌ Failed to send to {results['failed']} user(s)")
+                                    with st.expander("View errors"):
+                                        for error in results['errors']:
+                                            st.write(f"• {error}")
+                                
+                                # Show recipients
+                                with st.expander("📋 Sent to:"):
+                                    for user_email in selected_users:
+                                        st.write(f"  ✓ {user_email}")
                             else:
                                 st.warning("⚠️ Please select at least one user")
                     
                     with send_col2:
                         # Quick "Send to All" option
-                        if st.button("📧 Send to All Users", key=f"send_all_{campaign['id']}"):
-                            st.info(f"🚀 Sending campaign to all {len(all_users)} users...")
-                            st.success("✅ Campaign queued for all users!")
-                            st.caption("(Connect your Gmail API / email sender here)")
+                        if st.button("📧 Send to All Users", key=f"send_all_{campaign['id']}", disabled=not EMAIL_CONFIGURED):
+                            all_user_ids = [user['id'] for user in all_users]
+                            
+                            # Show sending status
+                            with st.spinner(f"Generating and sending {len(all_user_ids)} email(s)..."):
+                                results = send_campaign_to_users(campaign['id'], all_user_ids)
+                            
+                            # Display results
+                            if results['success'] > 0:
+                                st.success(f"✅ Successfully sent to {results['success']} user(s)")
+                            
+                            if results['failed'] > 0:
+                                st.error(f"❌ Failed to send to {results['failed']} user(s)")
+                                with st.expander("View errors"):
+                                    for error in results['errors']:
+                                        st.write(f"• {error}")
                 else:
                     st.warning("⚠️ No users available. Add users first!")
                 
@@ -322,4 +369,4 @@ with right_col:
 
 # Footer
 st.markdown("---")
-st.caption("🎓 Educational Security Awareness Training Platform | Built for Hackathon 2024")
+st.caption("Educational Security Awareness Training Platform | Built for Hack NC State 2026")
